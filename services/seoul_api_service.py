@@ -28,7 +28,7 @@ def fetch_raw_rainfall(start: int = 1, end: int = 100) -> dict[str, Any]:
 
     base_url = _require_env("SEOUL_API_URL")
     api_key = _require_env("SEOUL_API_KEY")
-    url = f"{base_url}/{api_key}/SeoulRtdFndRgnQly/{start}/{end}/"
+    url = f"{base_url}/{api_key}/json/ListRainfallService/{start}/{end}/"
 
     try:
         response = requests.get(url, timeout=10)

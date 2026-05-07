@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers.rainfall import router as rainfall_router
 from routers.river import router as river_router
 from routers.sewer import router as sewer_router
+from routers.sewer_pipe import router as sewer_pipe_router
 from routers.waste import router as waste_router
 from schemas.api_models import HealthResponse
 
@@ -23,6 +24,10 @@ openapi_tags = [
     {
         "name": "waste",
         "description": "서울시 생활계폐기물 발생량 CSV 조회 API",
+    },
+    {
+        "name": "sewer-pipe",
+        "description": "서울시 하수관로 수위 조회 API",
     },
 ]
 
@@ -48,6 +53,7 @@ app.include_router(rainfall_router)
 app.include_router(river_router)
 app.include_router(sewer_router)
 app.include_router(waste_router)
+app.include_router(sewer_pipe_router)
 
 
 @app.get(

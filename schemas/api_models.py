@@ -41,3 +41,10 @@ class SewerGuItem(BaseModel):
 class WasteGuItem(BaseModel):
     gu: str = Field(..., description="자치구 이름 (district name)")
     waste_generation: float = Field(..., description="생활폐기물 발생량 (waste generation amount)")
+
+
+class SewerPipeGuItem(BaseModel):
+    gu: str = Field(..., description="자치구 이름 (district name)")
+    pipe_level_avg: float = Field(..., description="자치구 평균 하수관로 수위 (average sewer pipe level)")
+    pipe_level_max: float = Field(..., description="자치구 최대 하수관로 수위 (maximum sewer pipe level)")
+    station_count: int = Field(..., description="집계에 사용된 관측 지점 개수 (number of stations)")

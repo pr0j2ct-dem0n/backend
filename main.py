@@ -5,7 +5,11 @@ from routers.rainfall import router as rainfall_router
 from routers.river import router as river_router
 from routers.sewer import router as sewer_router
 from routers.sewer_pipe import router as sewer_pipe_router
-from routers.waste import router as waste_router
+from routers.integrated import router as integrated_router
+from routers.trend import router as trend_router
+from routers.predict import router as predict_router
+from routers.flood_history import router as flood_history_router
+from routers.rain_facility import router as rain_facility_router
 from schemas.api_models import HealthResponse
 
 openapi_tags = [
@@ -22,12 +26,28 @@ openapi_tags = [
         "description": "서울시 하수도 시설 현황 CSV 조회 API",
     },
     {
-        "name": "waste",
-        "description": "서울시 생활계폐기물 발생량 CSV 조회 API",
-    },
-    {
         "name": "sewer-pipe",
         "description": "서울시 하수관로 수위 조회 API",
+    },
+    {
+        "name": "integrated",
+        "description": "서울시 구조적 막힘 위험 통합 분석 API",
+    },
+    {
+        "name": "trend",
+        "description": "하수관로 수위 추세 분석 API",
+    },
+    {
+        "name": "predict",
+        "description": "자치구 단기 위험 예측 API",
+    },
+    {
+        "name": "flood-history",
+        "description": "서울시 침수흔적도(Shapefile) 기반 이력 위험 API",
+    },
+    {
+        "name": "rain-facility",
+        "description": "서울시 빗물이용시설 통계 API",
     },
 ]
 
@@ -52,8 +72,12 @@ app.add_middleware(
 app.include_router(rainfall_router)
 app.include_router(river_router)
 app.include_router(sewer_router)
-app.include_router(waste_router)
 app.include_router(sewer_pipe_router)
+app.include_router(integrated_router)
+app.include_router(trend_router)
+app.include_router(predict_router)
+app.include_router(flood_history_router)
+app.include_router(rain_facility_router)
 
 
 @app.get(

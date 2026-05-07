@@ -98,6 +98,29 @@ def fetch_raw_sewer_pipe_level(region_code: str = "01") -> dict[str, Any]:
         raise SeoulAPIError(502, "JSON 변환 실패", preview) from exc
 
 
+def fetch_raw_rainwater_facility(start: int = 1, end: int = 1000) -> dict[str, Any]:
+    if start < 1 or end < 1 or start > end:
+        raise SeoulAPIError(400, "잘못된 범위", "start/end 값을 확인하세요.")
+
+    base_url = _require_env("SEOUL_API_URL")
+    api_key = _require_env("SEOUL_API_KEY")
+    url = f"{base_url}/{api_key}/json/TbUseRainwaterFacilityV/{start}/{end}/"
+
+    try:
+        response = requests.get(url, timeout=10)
+    except requests.RequestException as exc:
+        raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
+
+    if response.status_code != 200:
+        raise SeoulAPIError(response.status_code, "서울시 API 응답 오류")
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        preview = response.text[:200] if response.text else ""
+        raise SeoulAPIError(502, "JSON 변환 실패", preview) from exc
+
+
 def extract_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     data_obj: dict[str, Any] | None = None
 

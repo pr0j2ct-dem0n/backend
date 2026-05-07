@@ -23,6 +23,9 @@ class PredictDataError(Exception):
         super().__init__(error)
 
 
+DEBUG_MODE = True
+
+
 def _clamp_0_100(value: float) -> float:
     return max(0.0, min(value, 100.0))
 
@@ -43,6 +46,10 @@ def _load_rainwater_stats() -> dict[str, dict[str, float]]:
 
 
 def calculate_inflow(water_area_m2: float, rainfall_mm: float) -> float:
+    if water_area_m2 <= 0:
+        return 0.0
+    if rainfall_mm <= 0:
+        return 0.0
     return (water_area_m2 * rainfall_mm) / 1000
 
 
@@ -52,14 +59,18 @@ def calculate_effective_capacity(prcs_cpct: float, fclt_qy: float, use_qy: float
 
 
 def calculate_danger_rainfall(effective_capacity_m3: float, water_area_m2: float) -> float:
+    if effective_capacity_m3 <= 0:
+        return 0.0
     if water_area_m2 <= 0:
         return 0.0
     return ((effective_capacity_m3 * 0.8) / water_area_m2) * 1000
 
 
 def calculate_rain_capacity_risk(current_rainfall_mm: float, danger_rainfall_mm: float) -> float:
+    if current_rainfall_mm <= 0:
+        return 0.0
     if danger_rainfall_mm <= 0:
-        return 100.0
+        return 0.0
     score = (current_rainfall_mm / danger_rainfall_mm) * 100
     return _clamp_0_100(score)
 
@@ -107,23 +118,35 @@ def calculate_final_risk_score(
     sewer_structure_risk: float,
 ) -> float:
     score = (
-        (rain_capacity_risk * 0.35)
+        (rain_capacity_risk * 0.40)
         + (drainpipe_level_risk * 0.25)
-        + (river_level_risk * 0.15)
-        + (flood_history_risk * 0.15)
-        + (sewer_structure_risk * 0.10)
+        + (river_level_risk * 0.10)
+        + (flood_history_risk * 0.10)
+        + (sewer_structure_risk * 0.15)
     )
     return _clamp_0_100(score)
 
 
 def classify_risk_level(final_risk_score: float) -> str:
-    if final_risk_score >= 85:
-        return "CRITICAL"
-    if final_risk_score >= 70:
-        return "DANGER"
-    if final_risk_score >= 40:
-        return "CAUTION"
-    return "SAFE"
+    if final_risk_score >= 80:
+        return "위험"
+    if final_risk_score >= 50:
+        return "경고"
+    if final_risk_score >= 30:
+        return "주의"
+    return "안전"
+
+
+def build_rain_capacity_reason(
+    rainfall_mm: float,
+    danger_rainfall_mm: float,
+    rain_capacity_risk: float,
+) -> str:
+    if rainfall_mm <= 0:
+        return "현재 강우가 없어 유입 위험은 낮습니다."
+    if danger_rainfall_mm <= 0:
+        return "강우 기준선 계산에 필요한 집수면적 또는 시설용량 데이터가 부족합니다."
+    return f"현재 강우량은 위험 기준선의 {round(rain_capacity_risk)}% 수준입니다."
 
 
 def _get_default_area_capacity(gu_name: str) -> tuple[float, float]:
@@ -212,7 +235,11 @@ def _build_area_item(
     )
 
     reasons: list[str] = [
-        f"현재 강우량이 위험 기준선의 {round(rain_capacity_risk, 1)}% 수준입니다.",
+        build_rain_capacity_reason(
+            rainfall_mm=rainfall_mm,
+            danger_rainfall_mm=danger_rainfall_mm,
+            rain_capacity_risk=rain_capacity_risk,
+        )
     ]
 
     if occupancy_ratio >= 80:
@@ -223,7 +250,7 @@ def _build_area_item(
     if flood_history_risk > 0:
         reasons.append("과거 침수흔적이 존재합니다.")
 
-    return {
+    item = {
         "gu_name": gu_name,
         "scores": {
             "rain_capacity_risk": round(rain_capacity_risk, 2),
@@ -244,7 +271,10 @@ def _build_area_item(
         "flood_history": {
             "flood_count": int(flood_info["flood_count"]) if flood_info else 0,
         },
-        "debug": {
+        "reasons": reasons,
+    }
+    if DEBUG_MODE:
+        item["debug"] = {
             "rainwater_source": "rainwater_csv" if not used_rainwater_fallback else "sewer_capacity_fallback",
             "water_area_raw": round(water_area_m2, 4),
             "effective_capacity_raw": round(effective_capacity_m3, 4),
@@ -261,9 +291,8 @@ def _build_area_item(
             else "scaled_fallback",
             "flood_count_raw": int(flood_info["flood_count"]) if flood_info else 0,
             "flood_history_service_error": flood_history_error,
-        },
-        "reasons": reasons,
-    }
+        }
+    return item
 
 
 def predict_flood_areas(start_time: str, end_time: str) -> dict[str, Any]:

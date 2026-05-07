@@ -96,7 +96,7 @@ class PredictAreaItem(BaseModel):
     risk_level: str
     metrics: PredictMetrics
     flood_history: PredictFloodHistory
-    debug: dict
+    debug: dict | None = None
     reasons: list[str]
 
 

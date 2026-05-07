@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
+from schemas.api_models import ErrorResponse, NotFoundGuResponse, RainfallGuItem
 from services.rainfall_service import aggregate_rainfall_by_gu
 from services.seoul_api_service import SeoulAPIError, extract_rows, fetch_raw_rainfall
 
@@ -35,6 +36,8 @@ def get_rainfall_raw(
     "/rainfall/gu",
     summary="자치구별 강우량 요약",
     description="자치구별 평균/최대 10분 강우량과 관측소 개수를 반환합니다.",
+    response_model=list[RainfallGuItem],
+    responses={500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
 )
 def get_rainfall_by_gu(
     start: int = Query(default=1, ge=1, description="조회 시작 인덱스"),
@@ -52,6 +55,8 @@ def get_rainfall_by_gu(
     "/rainfall/gu/{gu_name}/summary",
     summary="특정 자치구 강우량 요약",
     description="요청한 자치구의 평균/최대 10분 강우량과 관측소 개수를 반환합니다.",
+    response_model=RainfallGuItem,
+    responses={404: {"model": NotFoundGuResponse}, 500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
 )
 def get_rainfall_gu_summary(
     gu_name: str,

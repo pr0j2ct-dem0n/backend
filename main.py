@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers.prediction import router as prediction_router
+from routers.rainfall import router as rainfall_router
 
 app = FastAPI(title="Seoul Under-Dash")
 
@@ -17,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(prediction_router)
+app.include_router(rainfall_router)
 
 
 @app.get("/")

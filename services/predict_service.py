@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import math
 from typing import Any
 
 from constants.region_codes import REGION_CODE_TO_GU
@@ -27,7 +28,19 @@ DEBUG_MODE = True
 
 
 def _clamp_0_100(value: float) -> float:
-    return max(0.0, min(value, 100.0))
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 0.0
+    return max(0.0, min(float(value), 100.0))
+
+
+def _safe_non_negative(value: float) -> float:
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 0.0
+    return max(float(value), 0.0)
+
+
+def _safe_metric(value: float, digits: int = 2) -> float:
+    return round(_safe_non_negative(value), digits)
 
 
 def _load_rainwater_stats() -> dict[str, dict[str, float]]:
@@ -50,12 +63,12 @@ def calculate_inflow(water_area_m2: float, rainfall_mm: float) -> float:
         return 0.0
     if rainfall_mm <= 0:
         return 0.0
-    return (water_area_m2 * rainfall_mm) / 1000
+    return _safe_non_negative((water_area_m2 * rainfall_mm) / 1000)
 
 
 def calculate_effective_capacity(prcs_cpct: float, fclt_qy: float, use_qy: float) -> float:
     remaining_capacity = max(fclt_qy - use_qy, 0.0)
-    return max(prcs_cpct + remaining_capacity, 0.0)
+    return _safe_non_negative(prcs_cpct + remaining_capacity)
 
 
 def calculate_danger_rainfall(effective_capacity_m3: float, water_area_m2: float) -> float:
@@ -63,7 +76,7 @@ def calculate_danger_rainfall(effective_capacity_m3: float, water_area_m2: float
         return 0.0
     if water_area_m2 <= 0:
         return 0.0
-    return ((effective_capacity_m3 * 0.8) / water_area_m2) * 1000
+    return _safe_non_negative(((effective_capacity_m3 * 0.8) / water_area_m2) * 1000)
 
 
 def calculate_rain_capacity_risk(current_rainfall_mm: float, danger_rainfall_mm: float) -> float:
@@ -253,20 +266,20 @@ def _build_area_item(
     item = {
         "gu_name": gu_name,
         "scores": {
-            "rain_capacity_risk": round(rain_capacity_risk, 2),
-            "drainpipe_level_risk": round(drainpipe_level_risk, 2),
-            "river_level_risk": round(river_level_risk, 2),
-            "flood_history_risk": round(flood_history_risk, 2),
-            "sewer_structure_risk": round(sewer_structure_risk, 2),
+            "rain_capacity_risk": _safe_metric(rain_capacity_risk, 2),
+            "drainpipe_level_risk": _safe_metric(drainpipe_level_risk, 2),
+            "river_level_risk": _safe_metric(river_level_risk, 2),
+            "flood_history_risk": _safe_metric(flood_history_risk, 2),
+            "sewer_structure_risk": _safe_metric(sewer_structure_risk, 2),
         },
-        "final_risk_score": round(final_risk_score, 2),
+        "final_risk_score": _safe_metric(final_risk_score, 2),
         "risk_level": classify_risk_level(final_risk_score),
         "metrics": {
-            "rainfall_mm": round(rainfall_mm, 2),
-            "danger_rainfall_mm": round(danger_rainfall_mm, 2),
-            "inflow_m3": round(inflow_m3, 2),
-            "effective_capacity_m3": round(effective_capacity_m3, 2),
-            "drainpipe_occupancy_ratio": round(occupancy_ratio, 2),
+            "rainfall_mm": _safe_metric(rainfall_mm, 2),
+            "danger_rainfall_mm": _safe_metric(danger_rainfall_mm, 2),
+            "inflow_m3": _safe_metric(inflow_m3, 2),
+            "effective_capacity_m3": _safe_metric(effective_capacity_m3, 2),
+            "drainpipe_occupancy_ratio": _safe_metric(occupancy_ratio, 2),
         },
         "flood_history": {
             "flood_count": int(flood_info["flood_count"]) if flood_info else 0,
@@ -276,16 +289,16 @@ def _build_area_item(
     if DEBUG_MODE:
         item["debug"] = {
             "rainwater_source": "rainwater_csv" if not used_rainwater_fallback else "sewer_capacity_fallback",
-            "water_area_raw": round(water_area_m2, 4),
-            "effective_capacity_raw": round(effective_capacity_m3, 4),
+            "water_area_raw": _safe_metric(water_area_m2, 4),
+            "effective_capacity_raw": _safe_metric(effective_capacity_m3, 4),
             "danger_rainfall_formula": "((effective_capacity * 0.8) / water_area) * 1000",
-            "rainfall_raw_mm": round(rainfall_mm, 4),
-            "drainpipe_level_raw": round(current_drainpipe_level, 4),
+            "rainfall_raw_mm": _safe_metric(rainfall_mm, 4),
+            "drainpipe_level_raw": _safe_metric(current_drainpipe_level, 4),
             "has_drainpipe_measurement": has_drainpipe_measurement,
-            "occupancy_ratio_raw": round(occupancy_ratio, 4),
-            "river_level_raw": round(river_level_raw, 4),
-            "river_min_level": round(river_min_level, 4) if river_min_level is not None else None,
-            "river_max_level": round(river_max_level, 4) if river_max_level is not None else None,
+            "occupancy_ratio_raw": _safe_metric(occupancy_ratio, 4),
+            "river_level_raw": _safe_metric(river_level_raw, 4),
+            "river_min_level": _safe_metric(river_min_level, 4) if river_min_level is not None else None,
+            "river_max_level": _safe_metric(river_max_level, 4) if river_max_level is not None else None,
             "river_risk_mode": "min_max_normalized"
             if river_min_level is not None and river_max_level is not None and river_max_level > river_min_level
             else "scaled_fallback",

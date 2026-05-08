@@ -23,7 +23,7 @@ def _error_response(exc: SeoulAPIError) -> JSONResponse:
     description="DrainpipeMonitoringInfo API를 호출해 현재 시각 기준 최근 1시간 원본 데이터를 반환합니다.",
 )
 def get_sewer_pipe_raw(
-    region_code: str = Query(default="01", description="권역 코드 (기본값: 01)"),
+    region_code: str = Query(default="all", description="권역 코드 (예: 01, 기본값: all)"),
 ) -> Any:
     try:
         return fetch_raw_sewer_pipe_level(region_code=region_code)
@@ -39,7 +39,7 @@ def get_sewer_pipe_raw(
     responses={500: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
 )
 def get_sewer_pipe_by_gu(
-    region_code: str = Query(default="01", description="권역 코드 (기본값: 01)"),
+    region_code: str = Query(default="all", description="권역 코드 (예: 01, 기본값: all)"),
 ) -> Any:
     try:
         payload = fetch_raw_sewer_pipe_level(region_code=region_code)
@@ -58,7 +58,7 @@ def get_sewer_pipe_by_gu(
 )
 def get_sewer_pipe_gu_summary(
     gu_name: str,
-    region_code: str = Query(default="01", description="권역 코드 (기본값: 01)"),
+    region_code: str = Query(default="all", description="권역 코드 (예: 01, 기본값: all)"),
 ) -> Any:
     try:
         payload = fetch_raw_sewer_pipe_level(region_code=region_code)

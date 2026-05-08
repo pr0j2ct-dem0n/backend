@@ -5,6 +5,8 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
+from constants.region_codes import REGION_CODE_TO_GU
+
 load_dotenv()
 
 
@@ -69,15 +71,9 @@ def fetch_raw_river_stage(start: int = 1, end: int = 100) -> dict[str, Any]:
         raise SeoulAPIError(502, "JSON 변환 실패", preview) from exc
 
 
-def fetch_raw_sewer_pipe_level(region_code: str = "01") -> dict[str, Any]:
-    base_url = _require_env("SEOUL_API_URL")
-    api_key = _require_env("SEOUL_API_KEY")
-    kst = timezone(timedelta(hours=9))
-    end_dt = datetime.now(kst).replace(minute=0, second=0, microsecond=0)
-    start_dt = end_dt - timedelta(hours=1)
-    start_time = start_dt.strftime("%Y%m%d%H")
-    end_time = end_dt.strftime("%Y%m%d%H")
-
+def _fetch_sewer_pipe_level_single(
+    *, base_url: str, api_key: str, region_code: str, start_time: str, end_time: str
+) -> dict[str, Any]:
     url = (
         f"{base_url}/{api_key}/json/DrainpipeMonitoringInfo/1/100/"
         f"{region_code}/{start_time}/{end_time}"
@@ -96,6 +92,52 @@ def fetch_raw_sewer_pipe_level(region_code: str = "01") -> dict[str, Any]:
     except ValueError as exc:
         preview = response.text[:200] if response.text else ""
         raise SeoulAPIError(502, "JSON 변환 실패", preview) from exc
+
+
+def _merge_drainpipe_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    merged_rows: list[dict[str, Any]] = []
+    for payload in payloads:
+        merged_rows.extend(extract_rows(payload))
+
+    return {
+        "DrainpipeMonitoringInfo": {
+            "list_total_count": len(merged_rows),
+            "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상 처리되었습니다"},
+            "row": merged_rows,
+        }
+    }
+
+
+def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
+    base_url = _require_env("SEOUL_API_URL")
+    api_key = _require_env("SEOUL_API_KEY")
+    kst = timezone(timedelta(hours=9))
+    end_dt = datetime.now(kst).replace(minute=0, second=0, microsecond=0)
+    start_dt = end_dt - timedelta(hours=1)
+    start_time = start_dt.strftime("%Y%m%d%H")
+    end_time = end_dt.strftime("%Y%m%d%H")
+
+    normalized = region_code.strip().lower()
+    if normalized == "all":
+        payloads = [
+            _fetch_sewer_pipe_level_single(
+                base_url=base_url,
+                api_key=api_key,
+                region_code=code,
+                start_time=start_time,
+                end_time=end_time,
+            )
+            for code in sorted(REGION_CODE_TO_GU.keys())
+        ]
+        return _merge_drainpipe_payloads(payloads)
+
+    return _fetch_sewer_pipe_level_single(
+        base_url=base_url,
+        api_key=api_key,
+        region_code=region_code,
+        start_time=start_time,
+        end_time=end_time,
+    )
 
 
 def fetch_raw_rainwater_facility(start: int = 1, end: int = 1000) -> dict[str, Any]:

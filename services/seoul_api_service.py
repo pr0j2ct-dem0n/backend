@@ -72,10 +72,17 @@ def fetch_raw_river_stage(start: int = 1, end: int = 100) -> dict[str, Any]:
 
 
 def _fetch_sewer_pipe_level_single(
-    *, base_url: str, api_key: str, region_code: str, start_time: str, end_time: str
+    *,
+    base_url: str,
+    api_key: str,
+    region_code: str,
+    start_time: str,
+    end_time: str,
+    start: int,
+    end: int,
 ) -> dict[str, Any]:
     url = (
-        f"{base_url}/{api_key}/json/DrainpipeMonitoringInfo/1/100/"
+        f"{base_url}/{api_key}/json/DrainpipeMonitoringInfo/{start}/{end}/"
         f"{region_code}/{start_time}/{end_time}"
     )
 
@@ -92,6 +99,65 @@ def _fetch_sewer_pipe_level_single(
     except ValueError as exc:
         preview = response.text[:200] if response.text else ""
         raise SeoulAPIError(502, "JSON 변환 실패", preview) from exc
+
+
+def _extract_first_data_obj(payload: dict[str, Any]) -> dict[str, Any] | None:
+    for value in payload.values():
+        if isinstance(value, dict) and isinstance(value.get("row"), list):
+            return value
+    return None
+
+
+def _fetch_sewer_pipe_level_all_pages(
+    *, base_url: str, api_key: str, region_code: str, start_time: str, end_time: str
+) -> dict[str, Any]:
+    page_size = 1000
+    first = _fetch_sewer_pipe_level_single(
+        base_url=base_url,
+        api_key=api_key,
+        region_code=region_code,
+        start_time=start_time,
+        end_time=end_time,
+        start=1,
+        end=page_size,
+    )
+
+    first_obj = _extract_first_data_obj(first)
+    if not first_obj:
+        return first
+
+    all_rows = extract_rows(first)
+    total_count = first_obj.get("list_total_count")
+    try:
+        total = int(total_count)
+    except (TypeError, ValueError):
+        total = len(all_rows)
+
+    if total <= len(all_rows):
+        return first
+
+    start = page_size + 1
+    while start <= total:
+        end = min(start + page_size - 1, total)
+        page_payload = _fetch_sewer_pipe_level_single(
+            base_url=base_url,
+            api_key=api_key,
+            region_code=region_code,
+            start_time=start_time,
+            end_time=end_time,
+            start=start,
+            end=end,
+        )
+        all_rows.extend(extract_rows(page_payload))
+        start = end + 1
+
+    return {
+        "DrainpipeMonitoringInfo": {
+            "list_total_count": len(all_rows),
+            "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상 처리되었습니다"},
+            "row": all_rows,
+        }
+    }
 
 
 def _merge_drainpipe_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
@@ -120,7 +186,7 @@ def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
     normalized = region_code.strip().lower()
     if normalized == "all":
         payloads = [
-            _fetch_sewer_pipe_level_single(
+            _fetch_sewer_pipe_level_all_pages(
                 base_url=base_url,
                 api_key=api_key,
                 region_code=code,
@@ -131,7 +197,7 @@ def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
         ]
         return _merge_drainpipe_payloads(payloads)
 
-    return _fetch_sewer_pipe_level_single(
+    return _fetch_sewer_pipe_level_all_pages(
         base_url=base_url,
         api_key=api_key,
         region_code=region_code,

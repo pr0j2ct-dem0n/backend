@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from schemas.api_models import ErrorResponse, NotFoundGuResponse, SewerPipeGuItem
 from services.seoul_api_service import SeoulAPIError, extract_rows, fetch_raw_sewer_pipe_level
-from services.sewer_pipe_service import _pick_gu, aggregate_sewer_pipe_by_gu
+from services.sewer_pipe_service import _pick_gu, _pick_level, aggregate_sewer_pipe_by_gu, build_sewer_pipe_trend
 
 router = APIRouter(tags=["sewer-pipe"])
 
@@ -26,7 +26,21 @@ def get_sewer_pipe_raw(
     region_code: str = Query(default="all", description="권역 코드 (예: 01, 기본값: all)"),
 ) -> Any:
     try:
-        return fetch_raw_sewer_pipe_level(region_code=region_code)
+        payload = fetch_raw_sewer_pipe_level(region_code=region_code)
+        rows = extract_rows(payload)
+        filtered_rows = []
+        for row in rows:
+            level = _pick_level(row)
+            if level is None or level < 0:
+                continue
+            filtered_rows.append(row)
+        return {
+            "DrainpipeMonitoringInfo": {
+                "list_total_count": len(filtered_rows),
+                "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상 처리되었습니다"},
+                "row": filtered_rows,
+            }
+        }
     except SeoulAPIError as exc:
         return _error_response(exc)
 
@@ -68,5 +82,21 @@ def get_sewer_pipe_gu_summary(
         if not gu_stats:
             return JSONResponse(status_code=404, content={"error": "데이터 없음", "gu": gu_name})
         return gu_stats[0]
+    except SeoulAPIError as exc:
+        return _error_response(exc)
+
+
+@router.get(
+    "/sewer-pipe/trend",
+    summary="서울 평균 하수관로 수위 추세",
+    description="최근 1시간 하수관로 원본 데이터에서 음수값을 제외하고 5분 평균 추세를 반환합니다.",
+)
+def get_sewer_pipe_trend(
+    region_code: str = Query(default="all", description="권역 코드 (예: 01, 기본값: all)"),
+) -> Any:
+    try:
+        payload = fetch_raw_sewer_pipe_level(region_code=region_code)
+        rows = extract_rows(payload)
+        return build_sewer_pipe_trend(rows, bucket_minutes=5)
     except SeoulAPIError as exc:
         return _error_response(exc)

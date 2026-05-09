@@ -42,9 +42,9 @@ class SewerPipeGuItem(BaseModel):
     gu: str = Field(..., description="자치구 이름 (district name)")
     pipe_level_avg: float = Field(..., description="자치구 평균 하수관로 수위 (average sewer pipe level)")
     pipe_level_max: float = Field(..., description="자치구 최대 하수관로 수위 (maximum sewer pipe level)")
-    occupancy_ratio: float = Field(..., description="기준 수위 대비 점유율(%) (occupancy ratio)")
-    status: str = Field(..., description="점유율 기반 상태 (NORMAL/WARNING/CRITICAL)")
-    overflow_risk: bool = Field(..., description="점유율 100% 초과 여부 (overflow risk)")
+    occupancy_ratio: float = Field(..., description="최대 수위 기준 점유율(%)")
+    status: str = Field(..., description="최대 점유율 기반 상태 (NORMAL/CAUTION/WARNING/DANGER)")
+    overflow_risk: bool = Field(..., description="위험 단계(80% 이상) 여부")
     station_count: int = Field(..., description="집계에 사용된 관측 지점 개수 (number of stations)")
 
 

@@ -1,6 +1,6 @@
 from typing import Any
 
-from services.drainpipe_service import get_drainpipe_levels
+from services.drainpipe_service import get_drainpipe_5m_avg_levels
 
 
 def calculate_level_trend(levels: list[dict[str, Any]]) -> dict[str, Any]:
@@ -40,12 +40,12 @@ def calculate_level_trend(levels: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def get_drainpipe_trend(region: str, start_time: str, end_time: str) -> dict[str, Any]:
-    levels = get_drainpipe_levels(region=region, start_time=start_time, end_time=end_time)
+    levels = get_drainpipe_5m_avg_levels(region=region, start_time=start_time, end_time=end_time)
     trend = calculate_level_trend(levels)
     return {
         "region": region,
         "start_time": start_time,
         "end_time": end_time,
         "trend": trend,
-        "points": levels,
+        "points": levels[-24:],
     }

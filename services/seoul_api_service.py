@@ -1,5 +1,7 @@
 import os
+import time
 from datetime import datetime, timedelta, timezone
+from threading import RLock
 from typing import Any
 
 import requests
@@ -8,6 +10,10 @@ from dotenv import load_dotenv
 from constants.region_codes import REGION_CODE_TO_GU
 
 load_dotenv()
+
+CACHE_TTL_SECONDS = float(os.getenv("SEOUL_API_CACHE_TTL_SEC", "45"))
+_CACHE_LOCK = RLock()
+_SEOUL_API_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 class SeoulAPIError(Exception):
@@ -23,6 +29,23 @@ def _require_env(name: str) -> str:
     if not value:
         raise SeoulAPIError(500, "환경 변수 누락", f"{name} 값이 없습니다.")
     return value
+
+
+def _cache_get(key: str) -> dict[str, Any] | None:
+    with _CACHE_LOCK:
+        cached = _SEOUL_API_CACHE.get(key)
+        if not cached:
+            return None
+        expires_at, payload = cached
+        if expires_at < time.monotonic():
+            _SEOUL_API_CACHE.pop(key, None)
+            return None
+        return payload
+
+
+def _cache_set(key: str, payload: dict[str, Any]) -> None:
+    with _CACHE_LOCK:
+        _SEOUL_API_CACHE[key] = (time.monotonic() + CACHE_TTL_SECONDS, payload)
 
 
 def fetch_raw_rainfall(start: int = 1, end: int = 100) -> dict[str, Any]:
@@ -174,16 +197,15 @@ def _merge_drainpipe_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
+def fetch_raw_sewer_pipe_level_in_range(region_code: str, start_time: str, end_time: str) -> dict[str, Any]:
     base_url = _require_env("SEOUL_API_URL")
     api_key = _require_env("SEOUL_API_KEY")
-    kst = timezone(timedelta(hours=9))
-    end_dt = datetime.now(kst).replace(minute=0, second=0, microsecond=0)
-    start_dt = end_dt - timedelta(hours=1)
-    start_time = start_dt.strftime("%Y%m%d%H")
-    end_time = end_dt.strftime("%Y%m%d%H")
-
     normalized = region_code.strip().lower()
+    cache_key = f"drainpipe:{normalized}:{start_time}:{end_time}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     if normalized == "all":
         payloads = [
             _fetch_sewer_pipe_level_all_pages(
@@ -195,15 +217,28 @@ def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
             )
             for code in sorted(REGION_CODE_TO_GU.keys())
         ]
-        return _merge_drainpipe_payloads(payloads)
+        merged = _merge_drainpipe_payloads(payloads)
+        _cache_set(cache_key, merged)
+        return merged
 
-    return _fetch_sewer_pipe_level_all_pages(
+    payload = _fetch_sewer_pipe_level_all_pages(
         base_url=base_url,
         api_key=api_key,
         region_code=region_code,
         start_time=start_time,
         end_time=end_time,
     )
+    _cache_set(cache_key, payload)
+    return payload
+
+
+def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
+    kst = timezone(timedelta(hours=9))
+    end_dt = datetime.now(kst).replace(minute=0, second=0, microsecond=0)
+    start_dt = end_dt - timedelta(hours=1)
+    start_time = start_dt.strftime("%Y%m%d%H")
+    end_time = end_dt.strftime("%Y%m%d%H")
+    return fetch_raw_sewer_pipe_level_in_range(region_code=region_code, start_time=start_time, end_time=end_time)
 
 
 def fetch_raw_rainwater_facility(start: int = 1, end: int = 1000) -> dict[str, Any]:

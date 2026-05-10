@@ -1,5 +1,6 @@
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any
@@ -12,8 +13,12 @@ from constants.region_codes import REGION_CODE_TO_GU
 load_dotenv()
 
 CACHE_TTL_SECONDS = float(os.getenv("SEOUL_API_CACHE_TTL_SEC", "45"))
+ALL_REGION_MAX_WORKERS = int(os.getenv("SEOUL_API_ALL_REGION_MAX_WORKERS", "4"))
+SEOUL_API_TIMEOUT_SECONDS = float(os.getenv("SEOUL_API_TIMEOUT_SEC", "6"))
+SEOUL_API_MAX_ROWS = int(os.getenv("SEOUL_API_MAX_ROWS", "4000"))
 _CACHE_LOCK = RLock()
 _SEOUL_API_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_INFLIGHT_LOCKS: dict[str, RLock] = {}
 
 
 class SeoulAPIError(Exception):
@@ -48,6 +53,15 @@ def _cache_set(key: str, payload: dict[str, Any]) -> None:
         _SEOUL_API_CACHE[key] = (time.monotonic() + CACHE_TTL_SECONDS, payload)
 
 
+def _inflight_lock(key: str) -> RLock:
+    with _CACHE_LOCK:
+        lock = _INFLIGHT_LOCKS.get(key)
+        if lock is None:
+            lock = RLock()
+            _INFLIGHT_LOCKS[key] = lock
+        return lock
+
+
 def fetch_raw_rainfall(start: int = 1, end: int = 100) -> dict[str, Any]:
     if start < 1 or end < 1 or start > end:
         raise SeoulAPIError(400, "잘못된 범위", "start/end 값을 확인하세요.")
@@ -57,7 +71,7 @@ def fetch_raw_rainfall(start: int = 1, end: int = 100) -> dict[str, Any]:
     url = f"{base_url}/{api_key}/json/ListRainfallService/{start}/{end}/"
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=SEOUL_API_TIMEOUT_SECONDS)
     except requests.RequestException as exc:
         raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
 
@@ -80,7 +94,7 @@ def fetch_raw_river_stage(start: int = 1, end: int = 100) -> dict[str, Any]:
     url = f"{base_url}/{api_key}/json/ListRiverStageService/{start}/{end}/"
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=SEOUL_API_TIMEOUT_SECONDS)
     except requests.RequestException as exc:
         raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
 
@@ -110,7 +124,7 @@ def _fetch_sewer_pipe_level_single(
     )
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=SEOUL_API_TIMEOUT_SECONDS)
     except requests.RequestException as exc:
         raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
 
@@ -156,11 +170,11 @@ def _fetch_sewer_pipe_level_all_pages(
     except (TypeError, ValueError):
         total = len(all_rows)
 
-    if total <= len(all_rows):
+    if total <= len(all_rows) or len(all_rows) >= SEOUL_API_MAX_ROWS:
         return first
 
     start = page_size + 1
-    while start <= total:
+    while start <= total and len(all_rows) < SEOUL_API_MAX_ROWS:
         end = min(start + page_size - 1, total)
         page_payload = _fetch_sewer_pipe_level_single(
             base_url=base_url,
@@ -171,7 +185,11 @@ def _fetch_sewer_pipe_level_all_pages(
             start=start,
             end=end,
         )
-        all_rows.extend(extract_rows(page_payload))
+        page_rows = extract_rows(page_payload)
+        remaining = SEOUL_API_MAX_ROWS - len(all_rows)
+        if remaining <= 0:
+            break
+        all_rows.extend(page_rows[:remaining])
         start = end + 1
 
     return {
@@ -206,30 +224,41 @@ def fetch_raw_sewer_pipe_level_in_range(region_code: str, start_time: str, end_t
     if cached is not None:
         return cached
 
-    if normalized == "all":
-        payloads = [
-            _fetch_sewer_pipe_level_all_pages(
-                base_url=base_url,
-                api_key=api_key,
-                region_code=code,
-                start_time=start_time,
-                end_time=end_time,
-            )
-            for code in sorted(REGION_CODE_TO_GU.keys())
-        ]
-        merged = _merge_drainpipe_payloads(payloads)
-        _cache_set(cache_key, merged)
-        return merged
+    lock = _inflight_lock(cache_key)
+    with lock:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
 
-    payload = _fetch_sewer_pipe_level_all_pages(
-        base_url=base_url,
-        api_key=api_key,
-        region_code=region_code,
-        start_time=start_time,
-        end_time=end_time,
-    )
-    _cache_set(cache_key, payload)
-    return payload
+        if normalized == "all":
+            codes = sorted(REGION_CODE_TO_GU.keys())
+            worker_count = min(max(1, ALL_REGION_MAX_WORKERS), len(codes))
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                payloads = list(
+                    executor.map(
+                        lambda code: _fetch_sewer_pipe_level_all_pages(
+                            base_url=base_url,
+                            api_key=api_key,
+                            region_code=code,
+                            start_time=start_time,
+                            end_time=end_time,
+                        ),
+                        codes,
+                    )
+                )
+            merged = _merge_drainpipe_payloads(payloads)
+            _cache_set(cache_key, merged)
+            return merged
+
+        payload = _fetch_sewer_pipe_level_all_pages(
+            base_url=base_url,
+            api_key=api_key,
+            region_code=region_code,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        _cache_set(cache_key, payload)
+        return payload
 
 
 def fetch_raw_sewer_pipe_level(region_code: str = "all") -> dict[str, Any]:
@@ -250,7 +279,7 @@ def fetch_raw_rainwater_facility(start: int = 1, end: int = 1000) -> dict[str, A
     url = f"{base_url}/{api_key}/json/TbUseRainwaterFacilityV/{start}/{end}/"
 
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=SEOUL_API_TIMEOUT_SECONDS)
     except requests.RequestException as exc:
         raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
 

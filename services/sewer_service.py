@@ -3,6 +3,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.core.cache import sewer_cache
+
 
 class SewerDataError(Exception):
     def __init__(self, status_code: int, error: str, detail: str | None = None):
@@ -74,6 +76,11 @@ def get_raw_columns() -> list[str]:
 
 
 def list_sewer_by_gu() -> list[dict[str, Any]]:
+    cache_key = "sewer_list"
+    # 캐시 HIT
+    if cache_key in sewer_cache:
+        return sewer_cache[cache_key]
+
     df = _load_dataframe().copy()
 
     for col in REQUIRED_COLUMNS[1:]:
@@ -102,12 +109,64 @@ def list_sewer_by_gu() -> list[dict[str, Any]]:
         )
 
     result.sort(key=lambda item: item["gu"])
+
+    # 캐시에 저장
+    sewer_cache[cache_key] = result
     return result
 
 
 def get_sewer_summary_by_gu(gu_name: str) -> dict[str, Any] | None:
+    cache_key = f"sewer_gu:{gu_name}"
+    if cache_key in sewer_cache:
+        return sewer_cache[cache_key]
+
     items = list_sewer_by_gu()
     for item in items:
         if item["gu"] == gu_name:
+            sewer_cache[cache_key] = item
             return item
     return None
+
+
+def get_dashboard_data() -> list[dict[str, Any]]:
+    """대시보드용 자치구별 예측 요약을 반환합니다. 캐시 적용됨."""
+    cache_key = "dashboard_all"
+    if cache_key in sewer_cache:
+        return sewer_cache[cache_key]
+
+    items = list_sewer_by_gu()
+    dashboard: list[dict[str, Any]] = []
+    for it in items:
+        # 간단한 예측 로직: 관거 비중을 기준으로 점유율 예측
+        pipe = float(it.get("pipe_length", 0) or 0)
+        other = float(
+            (it.get("underpass_length", 0) or 0)
+            + (it.get("open_channel_length", 0) or 0)
+            + (it.get("u_ditch_length", 0) or 0)
+            + (it.get("cross_sewer_length", 0) or 0)
+        )
+        total = pipe + other if (pipe + other) > 0 else 1
+
+        predicted_ratio = int((pipe / total) * 100)
+        # 상태 판정
+        if predicted_ratio > 100:
+            status = "위험"
+            message = "설계 용량 초과 예상"
+        elif predicted_ratio >= 80:
+            status = "주의"
+            message = "점유율 상승 주의"
+        else:
+            status = "정상"
+            message = "정상 범위"
+
+        dashboard.append(
+            {
+                "gu": it["gu"],
+                "predicted_load_rate": predicted_ratio,
+                "status": status,
+                "message": message,
+            }
+        )
+
+    sewer_cache[cache_key] = dashboard
+    return dashboard

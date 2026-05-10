@@ -10,6 +10,7 @@ from routers.trend import router as trend_router
 from routers.predict import router as predict_router
 from routers.flood_history import router as flood_history_router
 from routers.rain_facility import router as rain_facility_router
+from routers.dashboard import router as dashboard_router
 from schemas.api_models import HealthResponse
 
 openapi_tags = [
@@ -78,6 +79,7 @@ app.include_router(trend_router)
 app.include_router(predict_router)
 app.include_router(flood_history_router)
 app.include_router(rain_facility_router)
+app.include_router(dashboard_router)
 
 
 @app.get(

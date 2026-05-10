@@ -4,3 +4,4 @@ requests==2.33.1
 python-dotenv==1.2.2
 pandas==2.2.3
 geopandas==1.0.1
+cachetools==5.4.0

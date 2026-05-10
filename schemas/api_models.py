@@ -48,6 +48,13 @@ class SewerPipeGuItem(BaseModel):
     station_count: int = Field(..., description="집계에 사용된 관측 지점 개수 (number of stations)")
 
 
+class DashboardGuItem(BaseModel):
+    gu: str = Field(..., description="자치구 이름 (district name)")
+    predicted_load_rate: int = Field(..., description="예측 점유율 또는 부하율 (percentage-like)")
+    status: str = Field(..., description="상태 (정상/주의/위험)")
+    message: str = Field(..., description="상태 설명 메시지")
+
+
 class IntegratedStructuralRisk(BaseModel):
     score: float = Field(..., description="구조적 위험 점수 (0-100)")
     level: str = Field(..., description="구조적 위험 등급 (LOW/MEDIUM/HIGH/CRITICAL)")

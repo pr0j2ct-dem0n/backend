@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Any
+from xml.etree import ElementTree as ET
 
 import requests
 from dotenv import load_dotenv
@@ -309,3 +310,79 @@ def extract_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
     rows = data_obj.get("row", [])
     return rows if isinstance(rows, list) else []
+
+
+def fetch_raw_ts_rainfall_xml(start: int = 1, end: int = 200) -> list[dict[str, str]]:
+    if start < 1 or end < 1 or start > end:
+        raise SeoulAPIError(400, "잘못된 범위", "start/end 값을 확인하세요.")
+
+    base_url = _require_env("SEOUL_API_URL").rstrip("/")
+    api_key = _require_env("SEOUL_API_KEY")
+    url = f"{base_url}/{api_key}/xml/tsRainfallData/{start}/{end}/"
+
+    try:
+        response = requests.get(url, timeout=SEOUL_API_TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
+
+    if response.status_code != 200:
+        raise SeoulAPIError(response.status_code, "서울시 API 응답 오류")
+
+    try:
+        root = ET.fromstring(response.text)
+    except ET.ParseError as exc:
+        preview = response.text[:200] if response.text else ""
+        raise SeoulAPIError(502, "XML 파싱 실패", preview) from exc
+
+    result_code = root.findtext(".//RESULT/CODE")
+    if result_code and result_code != "INFO-000":
+        result_message = root.findtext(".//RESULT/MESSAGE") or "서울시 API 결과 코드 오류"
+        raise SeoulAPIError(502, "서울시 API 결과 오류", f"{result_code}: {result_message}")
+
+    rows: list[dict[str, str]] = []
+    for row_elem in root.findall(".//row"):
+        row: dict[str, str] = {}
+        for child in list(row_elem):
+            tag = str(child.tag).strip()
+            row[tag] = (child.text or "").strip()
+        if row:
+            rows.append(row)
+    return rows
+
+
+def fetch_raw_rain_pump_xml(start: int = 1, end: int = 1000) -> list[dict[str, str]]:
+    if start < 1 or end < 1 or start > end:
+        raise SeoulAPIError(400, "잘못된 범위", "start/end 값을 확인하세요.")
+
+    base_url = _require_env("SEOUL_API_URL").rstrip("/")
+    api_key = _require_env("SEOUL_API_KEY")
+    url = f"{base_url}/{api_key}/xml/rainPump/{start}/{end}/"
+
+    try:
+        response = requests.get(url, timeout=SEOUL_API_TIMEOUT_SECONDS)
+    except requests.RequestException as exc:
+        raise SeoulAPIError(502, "서울시 API 요청 실패", str(exc)) from exc
+
+    if response.status_code != 200:
+        raise SeoulAPIError(response.status_code, "서울시 API 응답 오류")
+
+    try:
+        root = ET.fromstring(response.text)
+    except ET.ParseError as exc:
+        preview = response.text[:200] if response.text else ""
+        raise SeoulAPIError(502, "XML 파싱 실패", preview) from exc
+
+    result_code = root.findtext(".//RESULT/CODE")
+    if result_code and result_code != "INFO-000":
+        result_message = root.findtext(".//RESULT/MESSAGE") or "서울시 API 결과 코드 오류"
+        raise SeoulAPIError(502, "서울시 API 결과 오류", f"{result_code}: {result_message}")
+
+    rows: list[dict[str, str]] = []
+    for row_elem in root.findall(".//row"):
+        row: dict[str, str] = {}
+        for child in list(row_elem):
+            tag = str(child.tag).strip()
+            row[tag] = (child.text or "").strip()
+        if row:
+            rows.append(row)
+    return rows

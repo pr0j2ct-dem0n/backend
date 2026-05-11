@@ -7,3 +7,7 @@ node_modules
 .DS_Store
 dist
 build
+
+# Exclude environment files from Docker image
+.env
+.env.*

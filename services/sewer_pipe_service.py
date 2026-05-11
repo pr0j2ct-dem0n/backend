@@ -1,8 +1,17 @@
 from collections import defaultdict
 from datetime import datetime
+import os
 from typing import Any
 
+from dotenv import load_dotenv
+
+from services.public_sewer_treatment_service import get_infra_by_gu_index, normalize_gu
+
+load_dotenv()
+
 DEFAULT_PIPE_CAPACITY = 2.0
+TOTAL_RISK_INFRA_WEIGHT = float(os.getenv("TOTAL_RISK_INFRA_WEIGHT", "0.3"))
+
 PIPE_CAPACITY: dict[str, float] = {
     "강남구": 2.0,
     "강서구": 1.8,
@@ -37,6 +46,22 @@ def get_pipe_status(ratio: float) -> str:
     if ratio >= 40:
         return "CAUTION"
     return "NORMAL"
+
+
+def clamp(value: float, min_value: float = 0.0, max_value: float = 100.0) -> float:
+    return max(min_value, min(max_value, value))
+
+
+def calculate_water_risk(pipe_level_max: float) -> float:
+    return round(clamp((pipe_level_max / DEFAULT_PIPE_CAPACITY) * 100), 1)
+
+
+def _build_infra_index() -> dict[str, dict[str, float]]:
+    return get_infra_by_gu_index()
+
+
+def calculate_total_risk(water_risk: float, infra_score: float) -> float:
+    return round(clamp(water_risk - (TOTAL_RISK_INFRA_WEIGHT * infra_score)), 1)
 
 
 def _pick_gu(row: dict[str, Any]) -> str | None:
@@ -98,6 +123,7 @@ def _valid_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def aggregate_sewer_pipe_by_gu(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped_levels: dict[str, list[float]] = defaultdict(list)
     grouped_sensors: dict[str, set[str]] = defaultdict(set)
+    infra_index = _build_infra_index()
 
     for row in _valid_rows(rows):
         gu_name = _pick_gu(row)
@@ -117,15 +143,29 @@ def aggregate_sewer_pipe_by_gu(rows: list[dict[str, Any]]) -> list[dict[str, Any
         pipe_level_max = max(values)
         capacity = get_max_capacity(gu_name)
         occupancy_ratio = calculate_pipe_ratio(pipe_level_max, capacity)
+        water_risk = calculate_water_risk(pipe_level_max)
+        infra = infra_index.get(normalize_gu(gu_name), {})
+        has_infra = bool(infra)
+        infra_score = float(infra.get("infra_score", 0.0))
+        total_risk = (
+            calculate_total_risk(water_risk=water_risk, infra_score=infra_score) if has_infra else water_risk
+        )
         result.append(
             {
                 "gu": gu_name,
                 "pipe_level_avg": pipe_level_avg,
                 "pipe_level_max": pipe_level_max,
                 "occupancy_ratio": occupancy_ratio,
-                "status": get_pipe_status(occupancy_ratio),
+                "water_risk": water_risk,
+                "infra_score": infra_score,
+                "total_risk": total_risk,
+                "status": get_pipe_status(total_risk),
                 "overflow_risk": occupancy_ratio >= 80,
                 "station_count": len(grouped_sensors[gu_name]) if grouped_sensors[gu_name] else len(values),
+                "facility_count": int(infra.get("facility_count", 0.0)),
+                "facility_capacity": round(float(infra.get("facility_capacity", 0.0)), 2),
+                "inflow_amount": round(float(infra.get("inflow_amount", 0.0)), 2),
+                "discharge_amount": round(float(infra.get("discharge_amount", 0.0)), 2),
             }
         )
 

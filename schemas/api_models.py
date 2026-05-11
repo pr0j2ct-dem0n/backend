@@ -43,9 +43,16 @@ class SewerPipeGuItem(BaseModel):
     pipe_level_avg: float = Field(..., description="자치구 평균 하수관로 수위 (average sewer pipe level)")
     pipe_level_max: float = Field(..., description="자치구 최대 하수관로 수위 (maximum sewer pipe level)")
     occupancy_ratio: float = Field(..., description="최대 수위 기준 점유율(%)")
-    status: str = Field(..., description="최대 점유율 기반 상태 (NORMAL/CAUTION/WARNING/DANGER)")
+    water_risk: float = Field(..., description="1차 수위 위험도 (0-100)")
+    infra_score: float = Field(..., description="인프라 안정성 점수 (0-100, 높을수록 안정)")
+    total_risk: float = Field(..., description="종합 침수 대응 위험도 (0-100)")
+    status: str = Field(..., description="종합 위험도 기반 상태 (NORMAL/CAUTION/WARNING/DANGER)")
     overflow_risk: bool = Field(..., description="위험 단계(80% 이상) 여부")
     station_count: int = Field(..., description="집계에 사용된 관측 지점 개수 (number of stations)")
+    facility_count: int = Field(..., description="자치구 내 공공하수처리시설 수")
+    facility_capacity: float = Field(..., description="자치구 하수 인프라 총 처리 역량(대체 지표)")
+    inflow_amount: float = Field(..., description="자치구 유입하수량 합계")
+    discharge_amount: float = Field(..., description="자치구 방류량 합계")
 
 
 class DashboardGuItem(BaseModel):

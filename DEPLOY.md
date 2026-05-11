@@ -80,3 +80,31 @@ curl http://127.0.0.1:8000/sewer-pipe/gu
 
 문의
 - 추가 수정이나 자동화(예: 시스템d 서비스, CI/CD)가 필요하면 알려주세요.
+
+**i3-6100(2C/4T) 서버용 권장 설정 및 워밍업**
+
+- 권장 환경변수(서버의 `/path/to/backend/.env`에 설정):
+	- `ALL_REGION_MAX_WORKERS=1`  # CPU가 적으므로 병렬 작업 제한
+	- `SEOUL_API_TIMEOUT_SEC=8`   # 공공API는 개별 요청을 짧게 유지하되 필요시 8초로 완화
+	- `SEOUL_API_CACHE_TTL_SEC=45` # 기본값 유지 또는 60초
+	- `SEOUL_API_MAX_ROWS=3000`   # 필요에 따라 낮춤
+
+- 워밍업 방식: `systemd timer` 기반 권장 (cron 대신 안정적)
+- 워밍업 주기: `5분` (캐시 TTL 45s일 때 안전하게 5분 권장). 서버 부하를 줄이려면 10분으로 늘리세요.
+- 워밍업 스크립트(`warm_cache.sh`)는 요청당 `--max-time 10s`로 짧게 설정되어 있습니다.
+
+설치 예시 (서버에서):
+
+```bash
+# 1) 워밍업 스크립트와 템플릿을 복사
+sudo cp /home/test/coding/backend/warm_cache.sh /path/to/backend/warm_cache.sh
+sudo cp /home/test/coding/backend/sewer-cache-warm.service /etc/systemd/system/sewer-cache-warm.service
+sudo cp /home/test/coding/backend/sewer-cache-warm.timer /etc/systemd/system/sewer-cache-warm.timer
+sudo chmod +x /path/to/backend/warm_cache.sh
+
+# 2) systemd 등록 및 활성화
+sudo systemctl daemon-reload
+sudo systemctl enable --now sewer-cache-warm.timer
+```
+
+주의: 공공 API의 레이트 제한을 반드시 확인하세요. 워밍업 빈도를 너무 높게 설정하면 API 차단 또는 과금 이슈가 발생할 수 있습니다.

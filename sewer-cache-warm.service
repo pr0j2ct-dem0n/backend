@@ -1,0 +1,13 @@
+[Unit]
+Description=Warm sewer-api cache (oneshot)
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/test/coding/backend
+ExecStart=/home/test/coding/backend/warm_cache.sh
+User=root
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
